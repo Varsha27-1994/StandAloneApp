@@ -1,4 +1,3 @@
-// client/src/components/MeetingView.jsx
 import React, { useEffect, useRef } from "react";
 import { getZoomSignature } from "../services/api";
 

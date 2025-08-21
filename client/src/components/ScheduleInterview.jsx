@@ -1,4 +1,3 @@
-// client/src/components/ScheduleInterview.jsx
 import React, { useState } from "react";
 import { createInterview } from "../services/api";
 

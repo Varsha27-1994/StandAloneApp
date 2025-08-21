@@ -1,4 +1,3 @@
-// controllers/interviewController.js
 const Interview = require("../models/Interview");
 const User = require("../models/User");
 const sendEmail = require("../utils/sendEmails");
@@ -111,10 +110,55 @@ exports.getInterview = async (req, res, next) => {
 // Create new interview
 exports.createInterview = async (req, res, next) => {
   try {
-    // Add user to req.body
-    req.body.interviewers = req.body.interviewers || [req.user.id];
+    // Handle interviewer emails conversion to ObjectIds
+    let interviewerIds = [];
 
-    const interview = await Interview.create(req.body);
+    if (req.body.interviewers && Array.isArray(req.body.interviewers)) {
+      // Check if the interviewers array contains emails (strings) or ObjectIds
+      const firstInterviewer = req.body.interviewers[0];
+
+      if (
+        typeof firstInterviewer === "string" &&
+        firstInterviewer.includes("@")
+      ) {
+        // Convert email addresses to User ObjectIds
+        const interviewerEmails = req.body.interviewers;
+        const users = await User.find({
+          email: { $in: interviewerEmails },
+        }).select("_id email");
+
+        if (users.length !== interviewerEmails.length) {
+          // Find which emails don't exist in the database
+          const foundEmails = users.map((user) => user.email);
+          const notFoundEmails = interviewerEmails.filter(
+            (email) => !foundEmails.includes(email)
+          );
+
+          return res.status(400).json({
+            success: false,
+            message: `The following interviewer emails were not found in the system: ${notFoundEmails.join(
+              ", "
+            )}. Please make sure all interviewers are registered users.`,
+          });
+        }
+
+        interviewerIds = users.map((user) => user._id);
+      } else {
+        // Assume they are already ObjectIds
+        interviewerIds = req.body.interviewers;
+      }
+    } else {
+      // Default to current user if no interviewers specified
+      interviewerIds = [req.user.id];
+    }
+
+    // Create interview data with converted interviewer IDs
+    const interviewData = {
+      ...req.body,
+      interviewers: interviewerIds,
+    };
+
+    const interview = await Interview.create(interviewData);
 
     // Populate interviewers for response
     await interview.populate("interviewers", "name email");
@@ -160,7 +204,6 @@ exports.createInterview = async (req, res, next) => {
       }
     } catch (emailError) {
       console.error("Email notification failed:", emailError);
-      // Continue even if email fails
     }
 
     res.status(201).json({
@@ -182,6 +225,37 @@ exports.updateInterview = async (req, res, next) => {
         success: false,
         message: "Interview not found",
       });
+    }
+
+    // Handle interviewer emails conversion if updating interviewers
+    if (req.body.interviewers && Array.isArray(req.body.interviewers)) {
+      const firstInterviewer = req.body.interviewers[0];
+
+      if (
+        typeof firstInterviewer === "string" &&
+        firstInterviewer.includes("@")
+      ) {
+        const interviewerEmails = req.body.interviewers;
+        const users = await User.find({
+          email: { $in: interviewerEmails },
+        }).select("_id email");
+
+        if (users.length !== interviewerEmails.length) {
+          const foundEmails = users.map((user) => user.email);
+          const notFoundEmails = interviewerEmails.filter(
+            (email) => !foundEmails.includes(email)
+          );
+
+          return res.status(400).json({
+            success: false,
+            message: `The following interviewer emails were not found: ${notFoundEmails.join(
+              ", "
+            )}`,
+          });
+        }
+
+        req.body.interviewers = users.map((user) => user._id);
+      }
     }
 
     interview = await Interview.findByIdAndUpdate(req.params.id, req.body, {
